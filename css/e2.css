@@ -1,0 +1,21 @@
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background-color: white;
+    color: #232b50;
+    font-family: Montserrat, Arial, sans-serif;
+}
+
+h1, h2, h3, h4 {
+    font-family: Montserrat, Arial, sans-serif;
+    padding: 10;
+    color: #232b50;
+}
+
+center {
+    text-align: center;
+}
