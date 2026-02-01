@@ -43,6 +43,35 @@
             <cfset projectList = projectList & " (ID: " & id_project & ")" & chr(10)>
         </cfloop>
 
+        <!--- Get recent timesheet entries for context --->
+        <cfquery name="recentTimesheets" datasource="#request.ds#">
+        select top 10 t.id_timesheet, t.shift_date, t.start_time, t.end_time, t.notes,
+               t.create_time, t.update_time, p.project, p.subproject, c.client_name
+        from timesheet t
+        inner join project p on t.id_project = p.id_project
+        inner join client c on p.id_client = c.id_client
+        where t.id_employee = <cfqueryparam value="#session.userid#" cfsqltype="cf_sql_integer">
+        order by t.shift_date desc, t.start_time desc
+        </cfquery>
+
+        <cfset recentList = "">
+        <cfloop query="recentTimesheets">
+            <cfset hours = Round((TimeFormat(end_time, "H") * 60 + TimeFormat(end_time, "m") - TimeFormat(start_time, "H") * 60 - TimeFormat(start_time, "m")) / 60 * 100) / 100>
+            <cfset recentList = recentList & "- " & DateFormat(shift_date, "yyyy-mm-dd") & " | " & client_name & " / " & project>
+            <cfif subproject neq "">
+                <cfset recentList = recentList & " / " & subproject>
+            </cfif>
+            <cfset recentList = recentList & " | " & TimeFormat(start_time, "HH:mm") & "-" & TimeFormat(end_time, "HH:mm") & " (" & hours & "h)">
+            <cfset recentList = recentList & " | entered: " & DateFormat(create_time, "yyyy-mm-dd") & " " & TimeFormat(create_time, "HH:mm")>
+            <cfif update_time neq "" and update_time neq create_time>
+                <cfset recentList = recentList & " | updated: " & DateFormat(update_time, "yyyy-mm-dd") & " " & TimeFormat(update_time, "HH:mm")>
+            </cfif>
+            <cfif notes neq "">
+                <cfset recentList = recentList & " | " & notes>
+            </cfif>
+            <cfset recentList = recentList & chr(10)>
+        </cfloop>
+
         <!--- Build system prompt --->
         <cfset systemPrompt = "You are a timesheet assistant for Engine No.2. Your job is to help users log their work hours.
 
@@ -52,6 +81,12 @@ Current user: #session.user# (ID: #session.userid#)
 
 Available projects:
 #projectList#
+
+Recent timesheet entries (most recent first):
+#recentList#
+
+You can answer questions about the user's recent timesheet entries using the data above.
+Examples: 'What was my last entry?', 'How many hours did I log yesterday?', 'What did I work on last week?'
 
 When a user describes their work, extract:
 1. Project name - match to one of the available projects above
@@ -73,6 +108,30 @@ Date parsing rules:
 - 'yesterday' = #yesterdayDate#
 - 'Monday', 'Tuesday', etc. = most recent occurrence of that day
 
+CONTEXT INFERENCE FOR FOLLOW-UP ENTRIES:
+When parsing a follow-up message, look at the conversation history for recently confirmed entries.
+If the user's message does NOT explicitly mention a client or project:
+- Use the client and project from the most recently confirmed entry in the conversation
+- The confirmed entry will appear as a message like 'Entry saved: [Client] / [Project] on [Date]...'
+
+If the user's message does NOT specify a date:
+- Default to the same date as the most recently confirmed entry
+- Unless they say 'today', 'yesterday', or a specific date/day name
+
+Examples of messages that should inherit from previous context:
+- 'Then 1pm to 5pm' -> same client, project, date; new times
+- 'Also worked 2-4pm on documentation' -> same client, project, date; new times and notes
+- '9am to noon yesterday' -> same client and project; different date
+- 'Another entry: 3pm to 6pm' -> same client, project, date; new times
+
+Examples where user is specifying a NEW project (do NOT inherit):
+- 'Now for Client B, I worked...' -> new client/project
+- 'Switch to Project X, 1pm to 3pm' -> new project
+- 'For the Admin Portal, 2pm to 5pm' -> new project explicitly named
+
+When you successfully infer context from a previous entry, mention this in your confirmation message:
+e.g., 'Got it! I'll log another entry for [Client] / [Project] (same as before)...'
+
 IMPORTANT RESPONSE FORMAT:
 If you can identify a valid project and time range, respond with a JSON object in this exact format:
 {
@@ -93,12 +152,16 @@ If you cannot parse the request or need clarification, respond with plain text a
 
 If the project name doesn't match any available project, list the closest matches and ask for clarification.">
 
-        <!--- Build messages array --->
-        <cfset messages = []>
-        <cfset arrayAppend(messages, {
-            "role": "user",
-            "content": userMessage
-        })>
+        <!--- Build messages array from history or just current message --->
+        <cfif IsDefined("requestBody.history") and isArray(requestBody.history) and arrayLen(requestBody.history) gt 0>
+            <cfset messages = requestBody.history>
+        <cfelse>
+            <cfset messages = []>
+            <cfset arrayAppend(messages, {
+                "role": "user",
+                "content": userMessage
+            })>
+        </cfif>
 
         <!--- Call Claude API --->
         <cfhttp url="https://api.anthropic.com/v1/messages" method="post" result="claudeResponse" timeout="30">

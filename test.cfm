@@ -1,2 +1,2 @@
 
-<cfoutput>#cgi.server_name#</cfoutput>
+<cfoutput>#now()#</cfoutput>

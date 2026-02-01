@@ -10,7 +10,7 @@
     <div id="chat-messages">
         <div class="message assistant-message mb-3">
             <div class="p-2 rounded bg-white border">
-                <strong>Assistant:</strong> Hi <cfoutput>#session.user#</cfoutput>! I can help you log your timesheet entries. Just tell me what you worked on, when, and for how long. I'll create the entry for you after confirming the details.
+                <strong>Assistant:</strong> Hi <cfoutput>#session.user#</cfoutput>! I can help you log your timesheet entries. Just tell me what you worked on, when, and for how long. You can also include a note about what you did. I'll create the entry for you after confirming the details.
             </div>
         </div>
     </div>
@@ -19,7 +19,7 @@
 <form id="chat-form" class="mb-3">
     <div class="input-group">
         <input type="text" id="user-input" class="form-control form-control-lg"
-               placeholder="e.g., I worked on Project X for Client Y from 9am to 12:30pm"
+               placeholder="e.g., I worked on Project X for Client Y from 9am to 12:30pm - refactoring the API"
                autocomplete="off">
         <button class="btn btn-primary btn-lg" type="submit" id="send-btn">Send</button>
     </div>
@@ -167,8 +167,9 @@ async function confirmEntry() {
         const data = await response.json();
 
         if (data.success) {
-            addMessage('assistant', 'Timesheet entry saved successfully! Entry ID: ' + data.id_timesheet);
-            conversationHistory.push({ role: 'assistant', content: 'Timesheet entry saved successfully!' });
+            const savedMsg = `Entry saved: ${pendingEntry.client_name} / ${pendingEntry.project} on ${pendingEntry.shift_date} from ${pendingEntry.start_time} to ${pendingEntry.end_time}${pendingEntry.notes ? ' (' + pendingEntry.notes + ')' : ''}`;
+            addMessage('assistant', 'Timesheet entry saved successfully! ' + savedMsg);
+            conversationHistory.push({ role: 'assistant', content: savedMsg });
         } else {
             addMessage('assistant', 'Failed to save entry: ' + (data.error || 'Unknown error'));
         }
